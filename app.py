@@ -1,7 +1,9 @@
 import streamlit as st
+import datetime
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import pydeck as pdk
 
 @st.cache(persist=True, suppress_st_warning=True, allow_output_mutation=True)
 def wwConfirmedDataCollection():
@@ -30,11 +32,11 @@ def dataMassaging(confirmed_df, death_df, recovery_df):
     recovery_df = recovery_df.rename(columns=str.lower)
 
     dates = confirmed_df.columns[4:]
-    confirmed_df = pd.melt(confirmed_df, id_vars=['province/state', 'country/region', 'lat', 'long'],value_vars=dates,var_name='date',value_name='confirmed')
-    death_df = pd.melt(death_df, id_vars=['province/state', 'country/region', 'lat', 'long'],value_vars=dates,var_name='date',value_name='deaths')
-    recovery_df = pd.melt(recovery_df, id_vars=['province/state', 'country/region', 'lat', 'long'],value_vars=dates,var_name='date',value_name='recovered')
+    confirmed_df = pd.melt(confirmed_df, id_vars=['country/region', 'lat', 'long'],value_vars=dates,var_name='date',value_name='confirmed')
+    death_df = pd.melt(death_df, id_vars=['country/region', 'lat', 'long'],value_vars=dates,var_name='date',value_name='deaths')
+    recovery_df = pd.melt(recovery_df, id_vars=['country/region', 'lat', 'long'],value_vars=dates,var_name='date',value_name='recovered')
 
-    #coverting to dates
+    #converting to dates
     confirmed_df['date'] = pd.to_datetime(confirmed_df['date'])
     death_df['date'] = pd.to_datetime(death_df['date'])
     recovery_df['date'] = pd.to_datetime(recovery_df['date'])
@@ -46,24 +48,21 @@ def dataMassaging(confirmed_df, death_df, recovery_df):
 
     canada_confirmed = canada_confirmed.groupby(['date'])['confirmed'].sum().reset_index()
     canada_confirmed['country/region'] = 'Canada'
-    canada_confirmed['province/state'] = 'nan'
     canada_confirmed['lat'] = '56.1304'
     canada_confirmed['long'] = '-106.3468'
-    canada_confirmed = canada_confirmed[['province/state', 'country/region', 'lat', 'long', 'date', 'confirmed']]
+    canada_confirmed = canada_confirmed[['country/region', 'lat', 'long', 'date', 'confirmed']]
 
     canada_death = canada_death.groupby(['date'])['deaths'].sum().reset_index()
     canada_death['country/region'] = 'Canada'
-    canada_death['province/state'] = 'nan'
     canada_death['lat'] = '56.1304'
     canada_death['long'] = '-106.3468'
-    canada_death = canada_death[['province/state', 'country/region', 'lat', 'long', 'date', 'deaths']]
+    canada_death = canada_death[['country/region', 'lat', 'long', 'date', 'deaths']]
     
     canada_recovery = canada_recovery.groupby(['date'])['recovered'].sum().reset_index()
     canada_recovery['country/region'] = 'Canada'
-    canada_recovery['province/state'] = 'nan'
     canada_recovery['lat'] = '56.1304'
     canada_recovery['long'] = '-106.3468'
-    canada_recovery = canada_recovery[['province/state', 'country/region', 'lat', 'long', 'date', 'recovered']]
+    canada_recovery = canada_recovery[['country/region', 'lat', 'long', 'date', 'recovered']]
     
 
     confirmed_df = confirmed_df[confirmed_df['country/region']!='Canada']
@@ -101,13 +100,68 @@ def main():
     confirmed_df, death_df, recovery_df = dataMassaging(confirmed_df, death_df, recovery_df)
     
     full_table = confirmed_df.merge(right=death_df, how='left',
-        on=['province/state', 'country/region', 'date', 'lat', 'long'])
+        on=['country/region', 'date', 'lat', 'long'])
     
     full_table = full_table.merge(right=recovery_df, how='left',
-        on=['province/state', 'country/region', 'date', 'lat', 'long'])
+        on=['country/region', 'date', 'lat', 'long'])
 
     st.write('Data from "CSSEGISandData POST data massaging"')
-    st.write(full_table)
+    full_table = full_table.rename(columns={'long':'lon'})
+    full_table['recovered'] = full_table['recovered'].fillna(0)
+    rows_with_zero_location = full_table['country/region'].str.contains('Diamond Princess') | full_table['country/region'].str.contains('MS Zaandam')
+    full_table = full_table[~(rows_with_zero_location)]
+    # st.write(full_table.isna().sum())
+    # full_table.drop(columns=['province/state'], axis=1)
+
+    # removing the time associated with date_time to just date to help reduce complexity in data. 
+    full_table['date'] = full_table['date'].dt.date
+
+    user_selectionbox_input = st.selectbox("Select an option", ['Global', 'Select from list of countries'])
+    if user_selectionbox_input == 'Select from list of countries':
+        list_of_countries = full_table['country/region'].unique()
+        selected_countries = st.multiselect('Select countries', list_of_countries)
+
+        mask_countries = full_table['country/region'].isin(selected_countries)
+        full_table = full_table[mask_countries]
+        st.write(full_table)
+        temp = pd.DataFrame(full_table, columns=['date','confirmed','deaths','recovered'])
+        temp = temp.rename(columns={'date':'index'}).set_index('index')
+        st.line_chart(temp)
+    else:
+        min_date = datetime.datetime(2020,1,1)
+        max_date = datetime.date(2022,1,1)
+
+        selected_date = st.date_input("Pick a date", min_value=min_date, max_value=max_date)
+        "The date selected:", selected_date
+        full_table = full_table[full_table['date']== selected_date]
+        temp = pd.DataFrame(full_table, columns=['lat', 'lon','confirmed'])
+
+        st.write(temp)
+        r = pdk.Deck(
+         map_style='mapbox://styles/mapbox/light-v9',
+         initial_view_state=pdk.ViewState(
+             latitude=55.3781,
+             longitude=-3.436,
+             zoom=11,
+             pitch=45,
+         ),
+         layers=[
+             pdk.Layer(
+                'HexagonLayer',
+                data=temp,
+                get_position='[lon, lat]',
+                auto_highlight=True,
+                radius=200,
+                elevation_range=[0, 1000000],
+                get_elevation="[confirmed]",
+                elevation_scale=4,
+                pickable=True,
+                extruded=True             
+                )
+         ],
+        )
+        st.pydeck_chart(r)
+        r.to_html("test.html", open_browser=True, notebook_display=False)
 
 if __name__ == "__main__":
     main()
