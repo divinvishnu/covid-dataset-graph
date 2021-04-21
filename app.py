@@ -93,6 +93,14 @@ def dataMassaging(confirmed_df, death_df, recovery_df):
 
     return new_confirmed_df, new_death_df, new_recovery_df
 
+def rgb(minimum, maximum, value):
+            minimum, maximum = float(minimum), float(maximum)
+            ratio = 2 * (value-minimum) / (maximum - minimum)
+            b = int(max(0, 255*(1 - ratio)))
+            r = int(max(0, 255*(ratio - 1)))
+            g = 255 - b - r
+            return r, g, b
+
 def main():    
     confirmed_df, death_df, recovery_df = wwConfirmedDataCollection()
     st.title("Covid-19 🦠 Pandemic Data Visualization")
@@ -116,12 +124,13 @@ def main():
     # removing the time associated with date_time to just date to help reduce complexity in data. 
     full_table['date'] = full_table['date'].dt.date
 
+    full_table = full_table.rename(columns={'country/region':'location'})
     user_selectionbox_input = st.selectbox("Select an option", ['Global', 'Select from list of countries'])
     if user_selectionbox_input == 'Select from list of countries':
-        list_of_countries = full_table['country/region'].unique()
+        list_of_countries = full_table['location'].unique()
         selected_countries = st.multiselect('Select countries', list_of_countries)
 
-        mask_countries = full_table['country/region'].isin(selected_countries)
+        mask_countries = full_table['location'].isin(selected_countries)
         full_table = full_table[mask_countries]
         st.write(full_table)
         temp = pd.DataFrame(full_table, columns=['date','confirmed','deaths','recovered'])
@@ -134,34 +143,50 @@ def main():
         selected_date = st.date_input("Pick a date", min_value=min_date, max_value=max_date)
         "The date selected:", selected_date
         full_table = full_table[full_table['date']== selected_date]
-        temp = pd.DataFrame(full_table, columns=['lat', 'lon','confirmed'])
-
+        temp = pd.DataFrame(full_table, columns=['location','lat', 'lon','confirmed'])
+        temp =  temp.reset_index()
         st.write(temp)
-        r = pdk.Deck(
-         map_style='mapbox://styles/mapbox/light-v9',
-         initial_view_state=pdk.ViewState(
+        st.write(temp['confirmed'].max())
+
+        
+
+        INITIAL_VIEW_STATE = pdk.ViewState(
              latitude=55.3781,
              longitude=-3.436,
-             zoom=11,
-             pitch=45,
-         ),
-         layers=[
-             pdk.Layer(
-                'HexagonLayer',
+             zoom=1,
+             pitch=25,
+        )
+
+        # view = pdk.data_utils.compute_view(temp[["lon","lat"]])
+        column_layer = pdk.Layer(
+                "ColumnLayer",
                 data=temp,
-                get_position='[lon, lat]',
-                auto_highlight=True,
-                radius=200,
-                elevation_range=[0, 1000000],
-                get_elevation="[confirmed]",
-                elevation_scale=4,
+                get_position=["lon", "lat"],
+                radius=50000,
+                get_elevation="confirmed",
+                elevation_scale=.70,
+                get_fill_color = ["255,255, confirmed*.1"],
+                get_line_color = [255,45,255],
+                filled = True,
                 pickable=True,
-                extruded=True             
-                )
-         ],
+                extruded=True,
+                auto_highlight=True,          
+        )
+        TOOLTIP = {
+            "html": "<b>{confirmed}</b> Confirmed Cases <br>{location}",
+            "style": {"background": "grey", "color": "white", "font-family": '"Helvetica Neue", Arial', "z-index": "10000"},
+        }
+
+        r = pdk.Deck(
+            column_layer,
+            # map_style=pdk.map_styles.SATELLITE,
+            map_style="mapbox://styles/mapbox/light-v9",
+            map_provider="mapbox",
+            initial_view_state = INITIAL_VIEW_STATE,
+            tooltip= TOOLTIP
         )
         st.pydeck_chart(r)
-        r.to_html("test.html", open_browser=True, notebook_display=False)
+        # r.to_html("test.html", open_browser=True, notebook_display=False)
 
 if __name__ == "__main__":
     main()
