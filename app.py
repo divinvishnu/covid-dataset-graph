@@ -165,7 +165,13 @@ def main():
         "Diamond Princess"
     ) | full_table["country/region"].str.contains("MS Zaandam")
     full_table = full_table[~(rows_with_zero_location)]
+
+    if full_table.isna().sum().any() > 0:
+        full_table.dropna(subset=["lat", "lon"], inplace=True)
+
+    # checking to find nan is unusual spots
     # st.write(full_table.isna().sum())
+    # st.write(full_table)
     # full_table.drop(columns=['province/state'], axis=1)
 
     # removing the time associated with date_time to just date to help reduce complexity in data.
@@ -192,7 +198,7 @@ def main():
         full_table = full_table[mask_countries]
 
         # Adding new cases to the table for graphing
-        full_table["new cases"] = full_table["confirmed"].diff(1)
+        full_table["new cases"] = full_table["confirmed"].diff(1).fillna(0)
 
         user_input = st.selectbox(
             "Select an option", ["Total Number of Cases", "New Cases Per Day"]
