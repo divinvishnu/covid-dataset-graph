@@ -1,3 +1,4 @@
+from altair.vegalite.v4.schema.core import FontWeight
 import streamlit as st
 import datetime
 import pandas as pd
@@ -7,7 +8,7 @@ import pydeck as pdk
 import altair as alt
 
 
-@st.cache(persist=True, suppress_st_warning=True, allow_output_mutation=True)
+@st.cache(suppress_st_warning=True, allow_output_mutation=True)
 def wwConfirmedDataCollection():
     death_url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv"
     recovery_url = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv"
@@ -183,120 +184,113 @@ def main():
     user_selectionbox_input = st.selectbox(
         "Select an option", ["Global", "Select from list of countries"]
     )
-    if user_selectionbox_input == "Select from list of countries":
-        list_of_countries = full_table["location"].unique()
-        selected_country = st.selectbox("Select country", list_of_countries)
+    min_date_found = full_table["date"].min()
+    max_date_found = full_table["date"].max()
 
-        mask_countries = full_table["location"] == (selected_country)
-        full_table = full_table[mask_countries]
-
-        # Adding new cases to the table for graphing
-        full_table["new_confirmed"] = full_table["confirmed"].diff(1).fillna(0)
-        full_table["new_recovered"] = full_table["recovered"].diff(1).fillna(0)
-        full_table["new_deaths"] = full_table["deaths"].diff(1).fillna(0)
+    selected_date = st.date_input(
+        "Pick a date",
+        (min_date_found, max_date_found)
+    )
+    # "The date selected:", selected_date
+    if len(selected_date) == 2:
         
+        if user_selectionbox_input == "Select from list of countries":
+            full_table = full_table[(full_table['date'] >= selected_date[0]) & (full_table['date'] <= selected_date[1])]
+            
+            # full_table = full_table[full_table["date"] == (between(selected_date[0], selected_date[1]))]
+            list_of_countries = full_table["location"].unique()
+            selected_country = st.selectbox("Select country", list_of_countries)
 
-        user_input = st.selectbox(
-            "Select an option", ["Total Number of Cases", "New Cases Per Day"]
-        )
-        st.write(full_table)
-        if user_input == "New Cases Per Day":
-            new_cases_source = pd.DataFrame(full_table, columns=["date", "new_confirmed", "new_recovered", "new_deaths"])
+            mask_countries = full_table["location"] == (selected_country)
+            full_table = full_table[mask_countries]
+
+            # Adding new cases to the table for graphing
+            full_table["new_confirmed"] = full_table["confirmed"].diff(1).fillna(0)
+            full_table["new_recovered"] = full_table["recovered"].diff(1).fillna(0)
+            full_table["new_deaths"] = full_table["deaths"].diff(1).fillna(0)
+            
+
+            user_input = st.selectbox(
+                "Select an option", ["Total Number of Cases", "New Cases Per Day"]
+            )
+            st.write(full_table)
+            if user_input == "New Cases Per Day":
+                new_cases_source = pd.DataFrame(full_table, columns=["date", "new_confirmed", "new_recovered", "new_deaths"])
+            else:
+                new_cases_source = pd.DataFrame(
+                    full_table, columns=["date", "confirmed", "deaths", "recovered"]
+                )
+
+            new_cases_source = new_cases_source.rename(columns={"date": "index"}).set_index("index")
+            filtered = st.multiselect("Filter Data", options=list(new_cases_source.columns), default=list(new_cases_source.columns))
+
+            if user_input == "New Cases Per Day":
+                st.write(f"New Cases Per Day for {selected_country}")
+            else:
+                st.write(f"Total reported cases for {selected_country}")
+
+            chart = alt.Chart(new_cases_source.reset_index()).transform_fold(
+                filtered,
+                as_=['Reported', 'cases']
+            ).mark_line().encode(
+                alt.X('index:T',title='Dates'),
+                alt.Y('cases:Q',title='Cases'),
+                color='Reported:N'
+            ).properties(
+                width=800,
+                height = 400
+            )
+            st.altair_chart(chart, use_container_width=True)
+
         else:
-            new_cases_source = pd.DataFrame(
-                full_table, columns=["date", "confirmed", "deaths", "recovered"]
+            full_table = full_table[full_table["date"] == selected_date[1]]
+            confirmed_source = pd.DataFrame(full_table, columns=["location", "lat", "lon", "confirmed"])
+            confirmed_source = confirmed_source.reset_index()
+            st.write(confirmed_source)
+
+            INITIAL_VIEW_STATE = pdk.ViewState(
+                latitude=55.3781,
+                longitude=-3.436,
+                zoom=1,
+                pitch=25,
             )
 
-        new_cases_source = new_cases_source.rename(columns={"date": "index"}).set_index("index")
-        # st.write(new_cases_source)
-        filtered = st.multiselect("Filter Data", options=list(new_cases_source.columns), default=list(new_cases_source.columns))
-        
-        if user_input == "New Cases Per Day":
-            st.write(f"New Cases Per Day for {selected_country}")
-        else:
-            st.write(f"Total reported cases for {selected_country}")
+            column_layer = pdk.Layer(
+                "ColumnLayer",
+                data=confirmed_source,
+                get_position=["lon", "lat"],
+                radius=50000,
+                get_elevation="confirmed",
+                elevation_scale=0.70,
+                get_fill_color=["255,255, confirmed*.1"],
+                get_line_color=[255, 45, 255],
+                filled=True,
+                pickable=True,
+                extruded=True,
+                auto_highlight=True,
+            )
+            TOOLTIP = {
+                "html": "{location}<br> <b>{confirmed}</b> Confirmed Cases",
+                "style": {
+                    "background": "grey",
+                    "color": "white",
+                    "font-family": '"Helvetica Neue", Arial',
+                    "z-index": "10000",
+                },
+            }
 
-        # chart = alt.Chart(new_cases_source).mark_line(
-        #     interpolate='basis',
-        #     color="blue",
-        #     line=True
-        # ).encode(
-        #     x="date:T",
-        #     y='confirmed:Q'
-        # )
-        chart = alt.Chart(new_cases_source.reset_index()).transform_fold(
-            filtered,
-            as_=['Reported', 'cases']
-        ).mark_line().encode(
-            x='index:T',
-            y='cases:Q',
-            color='Reported:N'
-        ).properties(
-            width=800,
-            height = 400
-        )
-        st.altair_chart(chart, use_container_width=True)
-        # st.write(new_cases_source)
-        # st.line_chart(new_cases_source[filtered])
-
+            r = pdk.Deck(
+                column_layer,
+                # map_style=pdk.map_styles.SATELLITE,
+                map_style="mapbox://styles/mapbox/light-v9",
+                map_provider="mapbox",
+                initial_view_state=INITIAL_VIEW_STATE,
+                tooltip=TOOLTIP,
+            )
+            st.write("## Total Number of Confirmed Cases All Time")
+            st.pydeck_chart(r)
     else:
-
-        mim_date_found = full_table["date"].min()
-        max_date_found = full_table["date"].max()
-
-        selected_date = st.date_input(
-            "Pick a date",
-            min_value=mim_date_found,
-            max_value=max_date_found,
-            value=max_date_found,
-        )
-        "The date selected:", selected_date
-        full_table = full_table[full_table["date"] == selected_date]
-        confirmed_source = pd.DataFrame(full_table, columns=["location", "lat", "lon", "confirmed"])
-        confirmed_source = confirmed_source.reset_index()
-        st.write(confirmed_source)
-
-        INITIAL_VIEW_STATE = pdk.ViewState(
-            latitude=55.3781,
-            longitude=-3.436,
-            zoom=1,
-            pitch=25,
-        )
-
-        column_layer = pdk.Layer(
-            "ColumnLayer",
-            data=confirmed_source,
-            get_position=["lon", "lat"],
-            radius=50000,
-            get_elevation="confirmed",
-            elevation_scale=0.70,
-            get_fill_color=["255,255, confirmed*.1"],
-            get_line_color=[255, 45, 255],
-            filled=True,
-            pickable=True,
-            extruded=True,
-            auto_highlight=True,
-        )
-        TOOLTIP = {
-            "html": "{location}<br> <b>{confirmed}</b> Confirmed Cases",
-            "style": {
-                "background": "grey",
-                "color": "white",
-                "font-family": '"Helvetica Neue", Arial',
-                "z-index": "10000",
-            },
-        }
-
-        r = pdk.Deck(
-            column_layer,
-            # map_style=pdk.map_styles.SATELLITE,
-            map_style="mapbox://styles/mapbox/light-v9",
-            map_provider="mapbox",
-            initial_view_state=INITIAL_VIEW_STATE,
-            tooltip=TOOLTIP,
-        )
-        st.write("## Total Number of Confirmed Cases All Time")
-        st.pydeck_chart(r)
+        st.write("Select Valid Dates to continue")
 
 
 if __name__ == "__main__":
