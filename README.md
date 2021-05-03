@@ -1,4 +1,4 @@
-#Covid-19 🦠 Pandemic Data Visualization
+# Covid-19 🦠 Pandemic Data Visualization
 Welcome to my covid-19 dashboard implemented on streamlit
 - Current Implementation Includes
   - Global data visualized geologically
