@@ -143,6 +143,7 @@ def human_format(num):
 
 
 def main():
+    st.set_page_config(layout="wide") 
     confirmed_df, death_df, recovery_df = wwConfirmedDataCollection()
     st.title("Covid-19 🦠 Pandemic Data Visualization")
     displayRawData(confirmed_df, death_df, recovery_df)
@@ -158,7 +159,7 @@ def main():
         right=recovery_df, how="left", on=["country/region", "date", "lat", "long"]
     )
 
-    st.write('Data from "CSSEGISandData POST data massaging"')
+    st.write('\nData from "CSSEGISandData POST data massaging"')
     full_table = full_table.rename(columns={"long": "lon"})
     full_table["recovered"] = full_table["recovered"].fillna(0)
     rows_with_zero_location = full_table["country/region"].str.contains(
@@ -178,14 +179,6 @@ def main():
     full_table["date"] = full_table["date"].dt.date
 
     full_table = full_table.rename(columns={"country/region": "location"})
-    # full_table.insert(
-    #     1,
-    #     "ΔConfirmed",
-    #     full_table.groupby(level=("location", "date"))["Confirmed"]
-    #     .diff()
-    #     .fillna(0)
-    #     .astype(int),
-    # )
 
     user_selectionbox_input = st.selectbox(
         "Select an option", ["Global", "Select from list of countries"]
@@ -198,24 +191,53 @@ def main():
         full_table = full_table[mask_countries]
 
         # Adding new cases to the table for graphing
-        full_table["new cases"] = full_table["confirmed"].diff(1).fillna(0)
+        full_table["new_confirmed"] = full_table["confirmed"].diff(1).fillna(0)
+        full_table["new_recovered"] = full_table["recovered"].diff(1).fillna(0)
+        full_table["new_deaths"] = full_table["deaths"].diff(1).fillna(0)
+        
 
         user_input = st.selectbox(
             "Select an option", ["Total Number of Cases", "New Cases Per Day"]
         )
         st.write(full_table)
         if user_input == "New Cases Per Day":
-            temp = pd.DataFrame(full_table, columns=["date", "new cases"])
-            st.write(f"New Cases Per Day for {selected_country}")
+            new_cases_source = pd.DataFrame(full_table, columns=["date", "new_confirmed", "new_recovered", "new_deaths"])
         else:
-            temp = pd.DataFrame(
+            new_cases_source = pd.DataFrame(
                 full_table, columns=["date", "confirmed", "deaths", "recovered"]
             )
+
+        new_cases_source = new_cases_source.rename(columns={"date": "index"}).set_index("index")
+        # st.write(new_cases_source)
+        filtered = st.multiselect("Filter Data", options=list(new_cases_source.columns), default=list(new_cases_source.columns))
+        
+        if user_input == "New Cases Per Day":
+            st.write(f"New Cases Per Day for {selected_country}")
+        else:
             st.write(f"Total reported cases for {selected_country}")
 
-        temp = temp.rename(columns={"date": "index"}).set_index("index")
-
-        st.line_chart(temp)
+        # chart = alt.Chart(new_cases_source).mark_line(
+        #     interpolate='basis',
+        #     color="blue",
+        #     line=True
+        # ).encode(
+        #     x="date:T",
+        #     y='confirmed:Q'
+        # )
+        chart = alt.Chart(new_cases_source.reset_index()).transform_fold(
+            filtered,
+            as_=['Reported', 'cases']
+        ).mark_line().encode(
+            x='index:T',
+            y='cases:Q',
+            color='Reported:N'
+        ).properties(
+            width=800,
+            height = 400
+        )
+        st.altair_chart(chart, use_container_width=True)
+        # st.write(new_cases_source)
+        # st.line_chart(new_cases_source[filtered])
 
     else:
 
@@ -230,10 +252,9 @@ def main():
         )
         "The date selected:", selected_date
         full_table = full_table[full_table["date"] == selected_date]
-        temp = pd.DataFrame(full_table, columns=["location", "lat", "lon", "confirmed"])
-        temp = temp.reset_index()
-        st.write(temp)
-        # st.write(temp["confirmed"].max())
+        confirmed_source = pd.DataFrame(full_table, columns=["location", "lat", "lon", "confirmed"])
+        confirmed_source = confirmed_source.reset_index()
+        st.write(confirmed_source)
 
         INITIAL_VIEW_STATE = pdk.ViewState(
             latitude=55.3781,
@@ -242,10 +263,9 @@ def main():
             pitch=25,
         )
 
-        # view = pdk.data_utils.compute_view(temp[["lon","lat"]])
         column_layer = pdk.Layer(
             "ColumnLayer",
-            data=temp,
+            data=confirmed_source,
             get_position=["lon", "lat"],
             radius=50000,
             get_elevation="confirmed",
