@@ -1,3 +1,4 @@
+from altair.vegalite.v4.schema.channels import Tooltip
 from altair.vegalite.v4.schema.core import FontWeight
 import streamlit as st
 import datetime
@@ -142,25 +143,15 @@ def human_format(num):
         "{:f}".format(num).rstrip("0").rstrip("."), ["", "K", "M", "B", "T"][magnitude]
     )
 
-
-def main():
-    st.set_page_config(layout="wide") 
-    confirmed_df, death_df, recovery_df = wwConfirmedDataCollection()
-    st.title("Covid-19 🦠 Pandemic Data Visualization")
-    displayRawData(confirmed_df, death_df, recovery_df)
-    confirmed_df, death_df, recovery_df = dataMassaging(
-        confirmed_df, death_df, recovery_df
-    )
-
-    full_table = confirmed_df.merge(
-        right=death_df, how="left", on=["country/region", "date", "lat", "long"]
+def mergeDataAndDataCorrection(confirmed, death, recovery):
+    full_table = confirmed.merge(
+        right=death, how="left", on=["country/region", "date", "lat", "long"]
     )
 
     full_table = full_table.merge(
-        right=recovery_df, how="left", on=["country/region", "date", "lat", "long"]
+        right=recovery, how="left", on=["country/region", "date", "lat", "long"]
     )
 
-    st.write('\nData from "CSSEGISandData POST data massaging"')
     full_table = full_table.rename(columns={"long": "lon"})
     full_table["recovered"] = full_table["recovered"].fillna(0)
     rows_with_zero_location = full_table["country/region"].str.contains(
@@ -180,7 +171,77 @@ def main():
     full_table["date"] = full_table["date"].dt.date
 
     full_table = full_table.rename(columns={"country/region": "location"})
+    return full_table
 
+def altairLineChartGraphing(graphTitle, source):
+    source = source.rename(columns={"date": "index"}).set_index("index")
+    filtered = st.multiselect("Filter Data", options=list(source.columns), default=list(source.columns))
+
+    chart = alt.Chart(source.reset_index()).transform_fold(
+        filtered,
+        as_=['Reported', 'cases']
+    ).mark_line(interpolate='basis').encode(
+        alt.X('index:T',title='Dates'),
+        alt.Y('cases:Q',title='Cases'),
+        color='Reported:N',
+        tooltip=[alt.Tooltip('index:T', title='Date'), 'cases:Q', 'Reported:N']
+    )
+
+    nearest = alt.selection(type='single', nearest=True, on='mouseover',
+                fields=['index'], empty='none')
+
+    # Transparent selectors across the chart. This is what tells us
+    # the x-value of the cursor
+    selectors = alt.Chart(source.reset_index()).transform_fold(
+        filtered,
+        as_=['Reported', 'cases']
+    ).mark_point().encode(
+        x='index:T',
+        opacity=alt.value(0),
+    ).add_selection(
+        nearest
+    )
+
+    # Draw points on the line, and highlight based on selection
+    points = chart.mark_point().encode(
+        opacity=alt.condition(nearest, alt.value(1), alt.value(0))
+    )
+
+    # Draw text labels near the points, and highlight based on selection
+    text = chart.mark_text(align='left', dx=5, dy=-5).encode(
+        text=alt.condition(nearest, 'cases:Q', alt.value(' '))
+    )
+
+    # Draw a rule at the location of the selection
+    rules = alt.Chart(source.reset_index()).transform_fold(
+        filtered,
+        as_=['Reported', 'cases']
+    ).mark_rule(color='gray').encode(
+        x='index:T',
+    ).transform_filter(
+        nearest
+    )
+
+    # Put the five layers into a chart and bind the data
+    layerChart = alt.layer(chart, selectors, points, rules, text,
+                            width=800, height = 400, title=graphTitle)
+    return layerChart
+
+def main():
+    st.set_page_config(layout="wide") 
+    st.markdown('<style>#vg-tooltip-element{z-index: 1000051}</style>',
+             unsafe_allow_html=True)
+
+    confirmed_df, death_df, recovery_df = wwConfirmedDataCollection()
+    st.title("Covid-19 🦠 Pandemic Data Visualization")
+    displayRawData(confirmed_df, death_df, recovery_df)
+    confirmed_df, death_df, recovery_df = dataMassaging(
+        confirmed_df, death_df, recovery_df
+    )
+    full_table = mergeDataAndDataCorrection(confirmed_df, death_df, recovery_df)
+
+    st.write('\nData from "CSSEGISandData POST data massaging"')
+    
     user_selectionbox_input = st.selectbox(
         "Select an option", ["Global", "Select from list of countries"]
     )
@@ -191,7 +252,6 @@ def main():
         "Pick a date",
         (min_date_found, max_date_found)
     )
-    # "The date selected:", selected_date
     if len(selected_date) == 2:
         
         if user_selectionbox_input == "Select from list of countries":
@@ -215,32 +275,15 @@ def main():
             )
             st.write(full_table)
             if user_input == "New Cases Per Day":
-                new_cases_source = pd.DataFrame(full_table, columns=["date", "new_confirmed", "new_recovered", "new_deaths"])
+                source = pd.DataFrame(full_table, columns=["date", "new_confirmed", "new_recovered", "new_deaths"])
+                title = f"New Cases Per Day for {selected_country}"
             else:
-                new_cases_source = pd.DataFrame(
+                source = pd.DataFrame(
                     full_table, columns=["date", "confirmed", "deaths", "recovered"]
                 )
-
-            new_cases_source = new_cases_source.rename(columns={"date": "index"}).set_index("index")
-            filtered = st.multiselect("Filter Data", options=list(new_cases_source.columns), default=list(new_cases_source.columns))
-
-            if user_input == "New Cases Per Day":
-                st.write(f"New Cases Per Day for {selected_country}")
-            else:
-                st.write(f"Total reported cases for {selected_country}")
-
-            chart = alt.Chart(new_cases_source.reset_index()).transform_fold(
-                filtered,
-                as_=['Reported', 'cases']
-            ).mark_line().encode(
-                alt.X('index:T',title='Dates'),
-                alt.Y('cases:Q',title='Cases'),
-                color='Reported:N'
-            ).properties(
-                width=800,
-                height = 400
-            )
-            st.altair_chart(chart, use_container_width=True)
+                title = f"Total reported cases for {selected_country}"
+            
+            st.altair_chart(altairLineChartGraphing(title, source), use_container_width=True)    
 
         else:
             full_table = full_table[full_table["date"] == selected_date[1]]
