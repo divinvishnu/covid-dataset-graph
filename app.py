@@ -1,10 +1,6 @@
-from altair.vegalite.v4.schema.channels import Tooltip
-from altair.vegalite.v4.schema.core import FontWeight
 import streamlit as st
-import datetime
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import pydeck as pdk
 import altair as alt
 
@@ -19,9 +15,8 @@ def wwConfirmedDataCollection():
     recovery_df = pd.read_csv(recovery_url)
     return confirmed_df, death_df, recovery_df
 
-
 def displayRawData(confirmed_df, death_df, recovery_df):
-    if st.sidebar.checkbox("Display Raw Confirmation Data", False) == True:
+    if st.sidebar.checkbox("Display Raw Data From CSSEGIS", False) == True:
         st.write('Data from "CSSEGISandData"')
         st.write("Confirmed Cases")
         st.write(confirmed_df)
@@ -29,7 +24,6 @@ def displayRawData(confirmed_df, death_df, recovery_df):
         st.write(death_df)
         st.write("Recovered from Cases")
         st.write(recovery_df)
-
 
 def dataMassaging(confirmed_df, death_df, recovery_df):
     # converts the column names to lowercase
@@ -118,7 +112,7 @@ def dataMassaging(confirmed_df, death_df, recovery_df):
 
     if (
         st.sidebar.checkbox(
-            "Display combined join data after canada calculation", False
+            "Display join data after canada calculation", False
         )
         == True
     ):
@@ -131,7 +125,6 @@ def dataMassaging(confirmed_df, death_df, recovery_df):
         st.write(new_recovery_df)
 
     return new_confirmed_df, new_death_df, new_recovery_df
-
 
 def human_format(num):
     num = float("{:.3g}".format(num))
@@ -288,8 +281,12 @@ def main():
         else:
             full_table = full_table[full_table["date"] == selected_date[1]]
             confirmed_source = pd.DataFrame(full_table, columns=["location", "lat", "lon", "confirmed"])
-            confirmed_source = confirmed_source.reset_index()
+            # confirmed_source = confirmed_source.reset_index()
             st.write(confirmed_source)
+
+            #Readable values
+            # full_table["confirmed_Test"] = human_format(full_table["confirmed"].)
+            # st.write(full_table)
 
             INITIAL_VIEW_STATE = pdk.ViewState(
                 latitude=55.3781,
@@ -304,9 +301,9 @@ def main():
                 get_position=["lon", "lat"],
                 radius=50000,
                 get_elevation="confirmed",
-                elevation_scale=0.70,
-                get_fill_color=["255,255, confirmed*.1"],
-                get_line_color=[255, 45, 255],
+                elevation_scale=0.25,
+                get_fill_color=["255,255, confirmed*.01"],
+                get_line_color=[255, 255, 255],
                 filled=True,
                 pickable=True,
                 extruded=True,
@@ -324,8 +321,8 @@ def main():
 
             r = pdk.Deck(
                 column_layer,
-                # map_style=pdk.map_styles.SATELLITE,
-                map_style="mapbox://styles/mapbox/light-v9",
+                map_style=pdk.map_styles.SATELLITE,
+                # map_style="mapbox://styles/mapbox/light-v9",
                 map_provider="mapbox",
                 initial_view_state=INITIAL_VIEW_STATE,
                 tooltip=TOOLTIP,
