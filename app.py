@@ -39,6 +39,7 @@ def dataMassaging(confirmed_df, death_df, recovery_df):
         var_name="date",
         value_name="confirmed",
     )
+    # st.write(confirmed_df.dtypes)   
     death_df = pd.melt(
         death_df,
         id_vars=["country/region", "lat", "long"],
@@ -67,23 +68,24 @@ def dataMassaging(confirmed_df, death_df, recovery_df):
     canada_confirmed = (
         canada_confirmed.groupby(["date"])["confirmed"].sum().reset_index()
     )
+    
     canada_confirmed["country/region"] = "Canada"
-    canada_confirmed["lat"] = "56.1304"
-    canada_confirmed["long"] = "-106.3468"
+    canada_confirmed["lat"] = 56.1304
+    canada_confirmed["long"] = -106.3468
     canada_confirmed = canada_confirmed[
         ["country/region", "lat", "long", "date", "confirmed"]
     ]
-
+     
     canada_death = canada_death.groupby(["date"])["deaths"].sum().reset_index()
     canada_death["country/region"] = "Canada"
-    canada_death["lat"] = "56.1304"
-    canada_death["long"] = "-106.3468"
+    canada_death["lat"] = 56.1304
+    canada_death["long"] = -106.3468
     canada_death = canada_death[["country/region", "lat", "long", "date", "deaths"]]
 
     canada_recovery = canada_recovery.groupby(["date"])["recovered"].sum().reset_index()
     canada_recovery["country/region"] = "Canada"
-    canada_recovery["lat"] = "56.1304"
-    canada_recovery["long"] = "-106.3468"
+    canada_recovery["lat"] = 56.1304
+    canada_recovery["long"] = -106.3468
     canada_recovery = canada_recovery[
         ["country/region", "lat", "long", "date", "recovered"]
     ]
@@ -126,6 +128,7 @@ def dataMassaging(confirmed_df, death_df, recovery_df):
 
     return new_confirmed_df, new_death_df, new_recovery_df
 
+#utilizing solution from https://stackoverflow.com/questions/579310/formatting-long-numbers-as-strings-in-python 
 def human_format(num):
     num = float("{:.3g}".format(num))
     magnitude = 0
@@ -281,12 +284,13 @@ def main():
         else:
             full_table = full_table[full_table["date"] == selected_date[1]]
             confirmed_source = pd.DataFrame(full_table, columns=["location", "lat", "lon", "confirmed"])
-            # confirmed_source = confirmed_source.reset_index()
-            st.write(confirmed_source)
+            
 
             #Readable values
-            # full_table["confirmed_Test"] = human_format(full_table["confirmed"].)
-            # st.write(full_table)
+            confirmed_source["confirmed_readable"] = confirmed_source["confirmed"].apply(human_format)
+            display_confirmed_source = pd.DataFrame(confirmed_source, columns=["location", "lat", "lon", "confirmed_readable"]).reset_index(drop=True)
+            display_confirmed_source = display_confirmed_source.rename(columns={"confirmed_readable": "confirmed"})
+            st.dataframe(display_confirmed_source)
 
             INITIAL_VIEW_STATE = pdk.ViewState(
                 latitude=55.3781,
@@ -310,7 +314,7 @@ def main():
                 auto_highlight=True,
             )
             TOOLTIP = {
-                "html": "{location}<br> <b>{confirmed}</b> Confirmed Cases",
+                "html": "{location}<br> <b>{confirmed_readable}</b> Confirmed Cases",
                 "style": {
                     "background": "grey",
                     "color": "white",
@@ -321,8 +325,7 @@ def main():
 
             r = pdk.Deck(
                 column_layer,
-                map_style=pdk.map_styles.SATELLITE,
-                # map_style="mapbox://styles/mapbox/light-v9",
+                map_style="mapbox://styles/mapbox/satellite-streets-v11",
                 map_provider="mapbox",
                 initial_view_state=INITIAL_VIEW_STATE,
                 tooltip=TOOLTIP,
